@@ -429,7 +429,7 @@ def ai_trading():
         fear_greed_data = collector.get_fear_greed_index()
 
         ####### 투자 판단에 대한 전략과 성향을 설정하는 알고리즘 #######
-        # 4. AI 분석을 위한 데이터 준비
+        # 5. AI 분석을 위한 데이터 준비
         if all([current_status, orderbook_data, ohlcv_data, fear_greed_data]):
             analysis_data = {
                 "current_status" : current_status,
@@ -438,14 +438,14 @@ def ai_trading():
                 "fear_greed": fear_greed_data
             }
 
-            # 5. AI 분석 실행
+            # 6. AI 분석 실행
             ai_result = collector.get_ai_analysis(analysis_data)
 
             if ai_result:
                 print("\n=== AI Analysis Results ===")
                 print(json.dumps(ai_result, indent=2))
 
-            # 6. 매매 실행
+            # 7. 매매 실행
             collector.execute_trade(ai_result['decision'], ai_result['confidence_score'])
 
 
