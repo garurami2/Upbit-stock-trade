@@ -5,6 +5,7 @@ import pyupbit
 import ta
 import json
 import moving_aver as ma
+import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -19,6 +20,7 @@ class CryptoDataCollector:
         self.secret = os.getenv("UPBIT_SECRET_KEY")
         self.upbit = pyupbit.Upbit(self.access, self.secret)
         self.client = OpenAI()
+        self.fear_greed_api = "https://api.alternative.me/fng/"
 
     # 현재 투자 상태 조회
     def get_current_status(self):
@@ -148,6 +150,7 @@ class CryptoDataCollector:
             traceback.print_exc()
             return None
 
+    # 이동 평균선 계산
     def add_technical_indicators(self, df):
 
         try:
@@ -185,95 +188,45 @@ class CryptoDataCollector:
             traceback.print_exc()
             return None
 
-    def perform_ma_analysis(self, df):
-        """종합적인 이동평균선 분석 수행"""
+    # 공포탐욕지수 데이터 조회
+    def get_fear_greed_index(self, limit=7):
         try:
-            if len(df) == 0:
-                return {}
+            response = requests.get(f"{self.fear_greed_api}?limit={limit}")
+            if response.status_code == 200:
+                data = response.json()
 
-            current = df.iloc[-1]
-            current_price = current['close']
+                # 최신 공포탐욕지수 출력
+                latest = data['data'][0]
+                print("\n=== Fear and Greed Index ===")
+                print(f"Current Value: {latest['value']}({latest['value_classification']})")
 
-            # 현재 이동평균선 값들
-            current_ma5 = current['sma_5']
-            current_ma20 = current['sma_20']
-            current_ma60 = current['sma_60']
-            current_ma120 = current['sma_120']
+                # 7일간의 데이터 가공
+                processed_data = []
+                for item in data['data']:
+                    processed_data.append({
+                        'data': datetime.fromtimestamp(int(item['timestamp'])).strftime('%Y-%m-%d'),
+                        'value': int(item['value']),
+                        'classification': item['value_classification'],
+                    })
 
-            # 이전 값들 (트렌드 분석용)
-            if len(df) >= 2:
-                prev = df.iloc[-2]
-                prev_ma5 = prev['sma_5']
-                prev_ma20 = prev['sma_20']
-                prev_ma60 = prev['sma_60']
-                prev_ma120 = prev['sma_120']
-            else:
-                prev_ma5 = prev_ma20 = prev_ma60 = prev_ma120 = 0
+                # 추세 분석
+                values = [int(item['value']) for item in data['data']]
+                avg_value = sum(values) / len(values)
+                trend = 'Improving' if values[0] > avg_value else 'Deteriorating'
 
-            # 크로스 신호 분석
-            ma_cross_signals = self.analyze_ma_cross_signals(df)
-
-            # 정배열/역배열 분석
-            ma_alignment = self.analyze_ma_alignment(df)
-
-            # 지지/저항 분석
-            support_resistance = self.analyze_ma_support_resistance(df)
-
-            # 이동평균선 분석 결과 구성
-            ma_analysis = {
-                "current_price": current_price,
-                "moving_averages": {
-                    "sma_5": current_ma5,
-                    "sma_20": current_ma20,
-                    "sma_60": current_ma60,
-                    "sma_120": current_ma120
-                },
-                "price_vs_ma": {
-                    "vs_sma5_percent": ((current_price - current_ma5) / current_ma5 * 100) if current_ma5 else 0,
-                    "vs_sma20_percent": ((current_price - current_ma20) / current_ma20 * 100) if current_ma20 else 0,
-                    "vs_sma60_percent": ((current_price - current_ma60) / current_ma60 * 100) if current_ma60 else 0,
-                    "vs_sma120_percent": (
-                                (current_price - current_ma120) / current_ma120 * 100) if current_ma120 else 0,
-                },
-                "ma_trends": {
-                    "sma5_trend": "상승" if current_ma5 > prev_ma5 else "하락" if current_ma5 < prev_ma5 else "보합",
-                    "sma20_trend": "상승" if current_ma20 > prev_ma20 else "하락" if current_ma20 < prev_ma20 else "보합",
-                    "sma60_trend": "상승" if current_ma60 > prev_ma60 else "하락" if current_ma60 < prev_ma60 else "보합",
-                    "sma120_trend": "상승" if current_ma120 > prev_ma120 else "하락" if current_ma120 < prev_ma120 else "보합",
-                },
-                "cross_signals": ma_cross_signals,
-                "alignment": ma_alignment,
-                "support_resistance": support_resistance
-            }
-
-            # 결과 출력
-            print(f"\n=== Moving Average Analysis ===")
-            print(f"현재가: {current_price:,.0f}원")
-            print(f"5일 이평: {current_ma5:,.0f}원 ({ma_analysis['ma_trends']['sma5_trend']})")
-            print(f"20일 이평: {current_ma20:,.0f}원 ({ma_analysis['ma_trends']['sma20_trend']})")
-            print(f"60일 이평: {current_ma60:,.0f}원 ({ma_analysis['ma_trends']['sma60_trend']})")
-            print(f"120일 이평: {current_ma120:,.0f}원 ({ma_analysis['ma_trends']['sma120_trend']})")
-            print(f"정배열 상태: {ma_alignment['status']} (강도: {ma_alignment['strength']})")
-
-            if ma_cross_signals:
-                print(f"크로스 신호: {', '.join(ma_cross_signals)}")
-
-            if support_resistance.get('nearest_support'):
-                nearest_support = support_resistance['nearest_support']
-                print(
-                    f"가장 가까운 지지선: {nearest_support['name']} ({nearest_support['level']:,.0f}원, -{nearest_support['distance_percent']:.2f}%)")
-
-            if support_resistance.get('nearest_resistance'):
-                nearest_resistance = support_resistance['nearest_resistance']
-                print(
-                    f"가장 가까운 저항선: {nearest_resistance['name']} ({nearest_resistance['level']:,.0f}원, +{nearest_resistance['distance_percent']:.2f}%)")
-
-            return ma_analysis
-
+                return {
+                    'current': {
+                        'value': int(latest['value']),
+                        'classification': latest['value_classification']
+                    },
+                    'history': processed_data,
+                    'trend': trend,
+                    'average': avg_value
+                }
         except Exception as e:
-            print(f"Error in perform_ma_analysis: {e}")
+            print(f"Error in get_fear_greed_index: {e}")
             traceback.print_exc()
-            return {}
+            return None
 
     # AI 분석 및 매매 신호 생성
     def get_ai_analysis(self, analysis_data):
@@ -292,7 +245,8 @@ class CryptoDataCollector:
                     "ask_bid_spread": analysis_data['orderbook_data']['ask_price'][0] - analysis_data['orderbook_data']['bid_price'][0],
                 },
                 "moving_averages_analysis": analysis_data['ohlcv_data']['ma_analysis'],
-                "ohlcv": analysis_data['ohlcv_data']
+                "ohlcv": analysis_data['ohlcv_data'],
+                "fear_greed": analysis_data['fear_greed']
             }
 
             response = self.client.chat.completions.create(
@@ -318,6 +272,13 @@ class CryptoDataCollector:
                                                     5. 24-hour hourly chart for short-term momentum
                                                     6. Technical indicators (price vs MA levels, support/resistance)
                                                     7. Risk management principles
+                                                    
+                                                    Please consider the following key points:
+                                                    - Fear & Greed Index below 20 (Extreme Fear) may present buying
+                                                    opportunities
+                                                    - Fear & Greed Index above 80 (Extreme Greed) may present selling
+                                                    opportunities
+                                                    - The trend of the Fear & Greed Index is also a crucial indicator 
     
                                                     Pay special attention to:
                                                     - Golden Cross (5MA crossing above 20MA) = Bullish signal
@@ -380,43 +341,67 @@ class CryptoDataCollector:
 
 
     # 매매 실행
-    def execute_trade(self, decision, confidence_score):
+    def execute_trade(self, decision, confidence_score, fear_greed_value):
         try:
 
             ####### 실제 거래 실행 #######
-            if decision == 'buy' and confidence_score > 70:
-                krw = self.upbit.get_balance("KRW")
-                # 매수 - 현재 보유 현금의 95%만 사용 (안전마진 확보)
-                available_krw = krw * 0.95
-                if available_krw > 5000:
-                    print(f"### Buy Order Executed: {available_krw:,.0f}원 ###")
-                    order_result = self.upbit.buy_market_order("KRW-BTC", available_krw)
-                    print("\n=== Buy Order Executed ===")
-                    print(f"주문 결과: {json.dumps(order_result, indent=2)}")
+            if decision == 'buy':
+                # 공포탐욕지수에 따른 매매 비율 조정
+                print(f"fear_greed_value(공포탐욕지수) : {fear_greed_value}")
+                # 극도의 공포 상태(0-25)에서는 더 과감한 매수
+                if fear_greed_value <= 25:
+                    trade_ratio = 0.9995 # 최대 매수
+                elif fear_greed_value <= 40:
+                    trade_ratio = 0.7 # 중간 매수
                 else:
-                    print(
-                        f"### Buy Order Failed: Insufficient KRW (보유: {available_krw:,.0f}원, 필요: 5,000원 이상) ###")
+                    trade_ratio = 0.5 # 소액 매수
+
+                # 신뢰도 70 이상
+                if confidence_score >= 70:
+                    krw = self.upbit.get_balance("KRW")
+                    # 매수 - 현재 보유 현금의 95%만 사용 (안전마진 확보)
+                    available_krw = krw * 0.95
+                    if available_krw > 5000:
+                        print(f"### Buy Order Executed: {available_krw:,.0f}원 ###")
+                        order_result = self.upbit.buy_market_order("KRW-BTC", available_krw)
+                        print("\n=== Buy Order Executed ===")
+                        print(f"주문 결과: {json.dumps(order_result, indent=2)}")
+                    else:
+                        print(
+                            f"### Buy Order Failed: Insufficient KRW (보유: {available_krw:,.0f}원, 필요: 5,000원 이상) ###")
 
             elif decision == 'sell' and confidence_score > 70:
-                btc = self.upbit.get_balance(self.ticker)
-                current_price = pyupbit.get_current_price(self.ticker)
 
-                # 매도 - 보유 BTC의 95%만 매도 (안전마진 확보)
-                # available_btc = current_status["my_btc"] * 0.95
-                # btc_value = available_btc * current_status["current_btc_price"]
-
-                if btc * current_price > 5000:
-                    print(f"### Sell Order Executed: {btc:.8f} BTC (약 {current_price:,.0f}원) ###")
-                    order_result = self.upbit.sell_market_order("KRW-BTC", btc)
-                    print("\n=== Sell Order Executed ===")
-                    print(f"주문 결과: {json.dumps(order_result, indent=2)}")
+                # 극도의 탐욕 상태(75-100)에서는 더 과감한 매도
+                if fear_greed_value >= 75:
+                    trade_ratio = 1.0 # 전량 매도
+                elif fear_greed_value >= 60:
+                    trade_ratio = 0.7 # 일부 매도
                 else:
-                    print(
-                        f"### Sell Order Failed: Insufficient BTC (보유: {btc:.8f} BTC, 가치: {btc * current_price:,.0f}원) ###")
+                    trade_ratio = 0.5 # 소량 매도
+
+                # 신뢰도 70 이상
+                if confidence_score >= 70:
+                    btc = self.upbit.get_balance(self.ticker)
+                    current_price = pyupbit.get_current_price(self.ticker)
+
+                    # 매도 - 보유 BTC의 95%만 매도 (안전마진 확보)
+                    # available_btc = current_status["my_btc"] * 0.95
+                    # btc_value = available_btc * current_status["current_btc_price"]
+
+                    if btc * current_price > 5000:
+                        print(f"### Sell Order Executed: {btc:.8f} BTC (약 {current_price:,.0f}원) ###")
+                        order_result = self.upbit.sell_market_order("KRW-BTC", btc)
+                        print("\n=== Sell Order Executed ===")
+                        print(f"주문 결과: {json.dumps(order_result, indent=2)}")
+                    else:
+                        print(
+                            f"### Sell Order Failed: Insufficient BTC (보유: {btc:.8f} BTC, 가치: {btc * current_price:,.0f}원) ###")
+
         except Exception as e:
             print(f"Error in execute_trade: {e}")
             traceback.print_exc()
-            return None
+
 # 업비트 거래소의 API를 쉽게 사용할 수 있도록 도워주는 파이썬 라이브러리
 # 상세한 pypupbit 라이브러리 사용법 링크
 # github.com/sharebook-kr/pyupbit
@@ -440,13 +425,17 @@ def ai_trading():
         print("\n=== OHLCV Data ===")
         print(json.dumps(ohlcv_data, indent=2))
 
+        # 4. 공포탐욕지수 조회
+        fear_greed_data = collector.get_fear_greed_index()
+
         ####### 투자 판단에 대한 전략과 성향을 설정하는 알고리즘 #######
         # 4. AI 분석을 위한 데이터 준비
-        if all([current_status, orderbook_data, ohlcv_data]):
+        if all([current_status, orderbook_data, ohlcv_data, fear_greed_data]):
             analysis_data = {
                 "current_status" : current_status,
                 "orderbook_data" : orderbook_data,
-                "ohlcv_data" : ohlcv_data
+                "ohlcv_data" : ohlcv_data,
+                "fear_greed": fear_greed_data
             }
 
             # 5. AI 분석 실행
@@ -476,13 +465,12 @@ if __name__ == "__main__":
         # 재귀적으로 계속 실행
         print("Starting Bitcoin Trading Bot...")
         ai_trading()
-        # while True:
-        #
-        #
-        #     ai_trading()
-        #     ####### 실행주기 - 1분마다 실행 (API 제한 고려) #######
-        #     print("1분 후 다음 분석을 시작합니다...")
-        #     time.sleep(60)  # 1분 간격으로 실행
+        while True:
+
+            ai_trading()
+            ####### 실행주기 - 10분마다 실행 (API 제한 고려) #######
+            print("10분 후 다음 분석을 시작합니다...")
+            time.sleep(600)  # 10분 간격으로 실행
 
     except KeyboardInterrupt:
         print("\n프로그램이 사용자에 의해 종료되었습니다.")
