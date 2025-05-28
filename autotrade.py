@@ -18,9 +18,53 @@ class CryptoDataCollector:
         # .env 파일에 저장한 access key와 secret key를 가져온 다음 access key를 가져와서 간단히 로그인
         self.access = os.getenv("UPBIT_ACCESS_KEY")
         self.secret = os.getenv("UPBIT_SECRET_KEY")
+        self.serpapi_key = os.getenv("SERPAPI_KEY")
         self.upbit = pyupbit.Upbit(self.access, self.secret)
         self.client = OpenAI()
         self.fear_greed_api = "https://api.alternative.me/fng/"
+
+    # 비트코인 관련 최신 뉴스 조회
+    def get_crypto_news(self):
+        try:
+            base_url = "https://serpapi.com/search.json"
+            params = {
+                "engine": "google_news",
+                "q": "bitcoin crypto trading",
+                "api_key": self.serpapi_key,
+                "gl": "us", # 미국 뉴스
+                "hl": "en"  # 영어 뉴스
+            }
+
+            response = requests.get(base_url, params=params)
+            if response.status_code == 200:
+                news_data = response.json()
+
+                if 'news_results' not in news_data:
+                    return None
+
+                processed_news = []
+                for news in news_data['news_results'][:5]:  # 상위 5개의 뉴스만 처리
+                    processed_news.append({
+                        'title': news.get('title', ''),
+                        'link': news.get('link', ''),
+                        'source': news.get('source', {}).get('name', ''),
+                        'date': news.get('date', ''),
+                        'snippet': news.get('snippet', ''),
+                    })
+                print("\n=== Latest Crypto News ===")
+                for news in processed_news:
+                    print(f"\nTitle: {news['title']}")
+                    print(f"Source: {news['source']}")
+                    print(f"Date: {news['date']}")
+
+                return processed_news
+
+            return None
+
+        except Exception as e:
+            print(f"Error in get_crypto_news: {e}")
+            traceback.print_exc()
+            return None
 
     # 현재 투자 상태 조회
     def get_current_status(self):
@@ -248,52 +292,54 @@ class CryptoDataCollector:
                 },
                 "moving_averages_analysis": analysis_data['ohlcv_data']['ma_analysis'],
                 "ohlcv": analysis_data['ohlcv_data'],
-                "fear_greed": analysis_data['fear_greed']
+                "fear_greed": analysis_data['fear_greed'],
+                "news": analysis_data['news']
             }
 
             # 어떤식으로 질문을 할지 설정
             prompt = """You are an expert Bitcoin trading analyst. Analyze the provided data and make a trading decision.
     
-                                                    Consider the following factors:
-                                                    1. Current investment status (cash vs BTC ratio, total portfolio value)
-                                                    2. Orderbook data (bid/ask spread, market depth, buying/selling pressure)
-                                                    3. Moving averages analysis with detailed signals:
-                                                       - Golden Cross (5MA crossing above 20MA) = Strong Bullish signal
-                                                       - Dead Cross (5MA crossing below 20MA) = Strong Bearish signal
-                                                       - MA alignment (정배열/역배열) strength
-                                                       - Support/Resistance levels from MAs
-                                                       - Price position relative to each MA
-                                                    4. 30-day daily chart patterns and trends
-                                                    5. 24-hour hourly chart for short-term momentum
-                                                    6. Technical indicators (price vs MA levels, support/resistance)
-                                                    7. Risk management principles
-                                                    
-                                                    Please consider the following key points:
-                                                    - Fear & Greed Index below 20 (Extreme Fear) may present buying
-                                                    opportunities
-                                                    - Fear & Greed Index above 80 (Extreme Greed) may present selling
-                                                    opportunities
-                                                    - The trend of the Fear & Greed Index is also a crucial indicator 
-    
-                                                    Pay special attention to:
-                                                    - Golden Cross (5MA crossing above 20MA) = Bullish signal
-                                                    - Dead Cross (5MA crossing below 20MA) = Bearish signal
-                                                    - Price position relative to moving averages
-                                                    - Moving average trend directions
-                                                    - Support and resistance levels from MAs
-    
-                                                    Provide your decision in JSON format with detailed reasoning.
-    
-                                                    Response format:
-                                                    {
-                                                      "decision": "buy" | "sell" | "hold",
-                                                      "reason": "detailed technical and fundamental analysis including MA analysis",
-                                                      "confidence_score": 0-100,
-                                                      "rist_level": "low/medium/high",
-                                                      "suggested_action": "specific action recommendation",
-                                                      "risk_assessment": "risk level and management strategy",
-                                                      "technical_summary": "summary of key technical indicators and MA signals"
-                                                    }"""
+                        Consider the following factors:
+                        1. Current investment status (cash vs BTC ratio, total portfolio value)
+                        2. Orderbook data (bid/ask spread, market depth, buying/selling pressure)
+                        3. Moving averages analysis with detailed signals:
+                           - Golden Cross (5MA crossing above 20MA) = Strong Bullish signal
+                           - Dead Cross (5MA crossing below 20MA) = Strong Bearish signal
+                           - MA alignment (정배열/역배열) strength
+                           - Support/Resistance levels from MAs
+                           - Price position relative to each MA
+                        4. 30-day daily chart patterns and trends
+                        5. 24-hour hourly chart for short-term momentum
+                        6. Technical indicators (price vs MA levels, support/resistance)
+                        7. Risk management principles
+                        8. Recent News Sentiment
+                        
+                        Please consider the following key points:
+                        - Fear & Greed Index below 20 (Extreme Fear) may present buying
+                        opportunities
+                        - Fear & Greed Index above 80 (Extreme Greed) may present selling
+                        opportunities
+                        - The trend of the Fear & Greed Index is also a crucial indicator 
+
+                        Pay special attention to:
+                        - Golden Cross (5MA crossing above 20MA) = Bullish signal
+                        - Dead Cross (5MA crossing below 20MA) = Bearish signal
+                        - Price position relative to moving averages
+                        - Moving average trend directions
+                        - Support and resistance levels from MAs
+
+                        Provide your decision in JSON format with detailed reasoning.
+
+                        Response format:
+                        {
+                          "decision": "buy" | "sell" | "hold",
+                          "reason": "detailed technical and fundamental analysis including MA analysis",
+                          "confidence_score": 0-100,
+                          "rist_level": "low/medium/high",
+                          "suggested_action": "specific action recommendation",
+                          "risk_assessment": "risk level and management strategy",
+                          "technical_summary": "summary of key technical indicators and MA signals"
+                        }"""
 
             response = self.client.chat.completions.create(
                 model="gpt-4o",
@@ -353,16 +399,14 @@ class CryptoDataCollector:
                 # 신뢰도 70 이상
                 if confidence_score >= 70:
                     krw = self.upbit.get_balance("KRW")
-                    # 매수 - 현재 보유 현금의 95%만 사용 (안전마진 확보)
-                    available_krw = krw * 0.95
-                    if available_krw > 5000:
-                        print(f"### Buy Order Executed: {available_krw:,.0f}원 ###")
-                        order_result = self.upbit.buy_market_order("KRW-BTC", available_krw)
+                    if krw > 5000:
+                        order_result = self.upbit.buy_market_order(self.ticker, krw * trade_ratio)
+                        print(f"### Buy Order Executed: {krw * trade_ratio:,.0f}원 ###")
                         print("\n=== Buy Order Executed ===")
+                        print(f"Trade Ratio: {trade_ratio * 100}%")
                         print(f"주문 결과: {json.dumps(order_result, indent=2)}")
                     else:
-                        print(
-                            f"### Buy Order Failed: Insufficient KRW (보유: {available_krw:,.0f}원, 필요: 5,000원 이상) ###")
+                        print(f"### Buy Order Failed: Insufficient KRW (보유: {krw:,.0f}원, 필요: 5,000원 이상) ###")
 
             elif decision == 'sell' and confidence_score > 70:
 
@@ -384,9 +428,11 @@ class CryptoDataCollector:
                     # btc_value = available_btc * current_status["current_btc_price"]
 
                     if btc * current_price > 5000:
-                        print(f"### Sell Order Executed: {btc:.8f} BTC (약 {current_price:,.0f}원) ###")
-                        order_result = self.upbit.sell_market_order("KRW-BTC", btc)
+                        sell_amount = btc * trade_ratio
+                        print(f"### Sell Order Executed: {btc:.8f} BTC (약 {sell_amount:,.0f}원) ###")
+                        order_result = self.upbit.sell_market_order(self.ticker, sell_amount)
                         print("\n=== Sell Order Executed ===")
+                        print(f"Trade Ratio: {trade_ratio * 100}%")
                         print(f"주문 결과: {json.dumps(order_result, indent=2)}")
                     else:
                         print(
@@ -422,24 +468,28 @@ def ai_trading():
         # 4. 공포탐욕지수 조회
         fear_greed_data = collector.get_fear_greed_index()
 
+        # 5. 뉴스 데이터 조회
+        news_data = collector.get_crypto_news()
+
         ####### 투자 판단에 대한 전략과 성향을 설정하는 알고리즘 #######
-        # 5. AI 분석을 위한 데이터 준비
-        if all([current_status, orderbook_data, ohlcv_data, fear_greed_data]):
+        # 6. AI 분석을 위한 데이터 준비
+        if all([current_status, orderbook_data, ohlcv_data, fear_greed_data, news_data]):
             analysis_data = {
                 "current_status" : current_status,
                 "orderbook_data" : orderbook_data,
                 "ohlcv_data" : ohlcv_data,
-                "fear_greed": fear_greed_data
+                "fear_greed": fear_greed_data,
+                "news": news_data
             }
 
-            # 6. AI 분석 실행
+            # 7. AI 분석 실행
             ai_result = collector.get_ai_analysis(analysis_data)
 
             if ai_result:
                 print("\n=== AI Analysis Results ===")
                 print(json.dumps(ai_result, indent=2))
 
-            # 7. 매매 실행
+            # 8. 매매 실행
             collector.execute_trade(ai_result['decision'], ai_result['confidence_score'], fear_greed_data['current']['value'])
 
 
@@ -471,3 +521,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"예상치 못한 오류: {str(e)}")
         time.sleep(60)  # 에러 발생 시에도 1분 대기
+
