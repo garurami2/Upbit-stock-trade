@@ -214,6 +214,8 @@ class CryptoDataCollector:
                 avg_value = sum(values) / len(values)
                 trend = 'Improving' if values[0] > avg_value else 'Deteriorating'
 
+                print(values)
+
                 return {
                     'current': {
                         'value': int(latest['value']),
@@ -249,15 +251,8 @@ class CryptoDataCollector:
                 "fear_greed": analysis_data['fear_greed']
             }
 
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": """You are an expert Bitcoin trading analyst. Analyze the provided data and make a trading decision.
+            # 어떤식으로 질문을 할지 설정
+            prompt = """You are an expert Bitcoin trading analyst. Analyze the provided data and make a trading decision.
     
                                                     Consider the following factors:
                                                     1. Current investment status (cash vs BTC ratio, total portfolio value)
@@ -299,17 +294,17 @@ class CryptoDataCollector:
                                                       "risk_assessment": "risk level and management strategy",
                                                       "technical_summary": "summary of key technical indicators and MA signals"
                                                     }"""
-                            }
-                        ]
+
+            response = self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": prompt
                     },
                     {
                         "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": f"Please analyze this Bitcoin trading data and provide your recommendation:\n\n{ai_prompt_data}"
-                            }
-                        ]
+                        "content": f"Market datafor analysis: {json.dumps(ai_prompt_data)}"
                     }
                 ],
                 response_format={
@@ -342,12 +337,11 @@ class CryptoDataCollector:
 
     # 매매 실행
     def execute_trade(self, decision, confidence_score, fear_greed_value):
+        print(f"fear_greed_value(공포탐욕지수): {fear_greed_value}")
         try:
-
             ####### 실제 거래 실행 #######
             if decision == 'buy':
                 # 공포탐욕지수에 따른 매매 비율 조정
-                print(f"fear_greed_value(공포탐욕지수) : {fear_greed_value}")
                 # 극도의 공포 상태(0-25)에서는 더 과감한 매수
                 if fear_greed_value <= 25:
                     trade_ratio = 0.9995 # 최대 매수
@@ -446,7 +440,7 @@ def ai_trading():
                 print(json.dumps(ai_result, indent=2))
 
             # 7. 매매 실행
-            collector.execute_trade(ai_result['decision'], ai_result['confidence_score'])
+            collector.execute_trade(ai_result['decision'], ai_result['confidence_score'], fear_greed_data['current']['value'])
 
 
     except Exception as e:
