@@ -135,34 +135,6 @@ class CryptoDataCollector:
             print(f"MACD: {df_daily['macd'].iloc[-1]:.2f}")
             print(f"BB Position: {df_daily['bb_pband'].iloc[-1]:.2f}")
 
-            # 이동평균선 분석 정보
-            # ma_analysis = {
-            #     "current_price": current_price,
-            #     "ma5_current": current_ma5,
-            #     "ma20_current": current_ma20,
-            #     "price_vs_ma5": ((current_price - current_ma5) / current_ma5 * 100) if current_ma5 else 0,
-            #     "price_vs_ma20": ((current_price - current_ma20) / current_ma20 * 100) if current_ma20 else 0,
-            #     "ma5_trend": "상승" if current_ma5 > prev_ma5 else "하락" if current_ma5 < prev_ma5 else "보합",
-            #     "ma20_trend": "상승" if current_ma20 > prev_ma20 else "하락" if current_ma20 < prev_ma20 else "보합",
-            #     "ma5_vs_ma20": "위" if current_ma5 > current_ma20 else "아래" if current_ma5 < current_ma20 else "동일",
-            #     "cross_signals": ma_cross_signals,
-            #     "support_resistance": {
-            #         "ma5_support": current_ma5 if current_price > current_ma5 else None,
-            #         "ma20_support": current_ma20 if current_price > current_ma20 else None,
-            #         "ma5_resistance": current_ma5 if current_price < current_ma5 else None,
-            #         "ma20_resistance": current_ma20 if current_price < current_ma20 else None
-            #     }
-            # }
-            #
-            # print(f"   - 현재가: {current_price:,.0f}원")
-            # print(f"   - 5일 이평: {current_ma5:,.0f}원 ({ma_analysis['ma5_trend']})")
-            # print(f"   - 20일 이평: {current_ma20:,.0f}원 ({ma_analysis['ma20_trend']})")
-            # print(f"   - 5일선 대비: {ma_analysis['price_vs_ma5']:+.2f}%")
-            # print(f"   - 20일선 대비: {ma_analysis['price_vs_ma20']:+.2f}%")
-            # print(f"   - 5일선은 20일선 {ma_analysis['ma5_vs_ma20']}에 위치")
-            # if ma_cross_signals:
-            #     print(f"   - 크로스 신호: {', '.join(ma_cross_signals)}")
-
             print("=== 데이터 수집 완료 ===\n")
 
             return {
@@ -319,7 +291,7 @@ class CryptoDataCollector:
                     "best_bid_price": analysis_data['orderbook_data']['bid_price'][0],
                     "ask_bid_spread": analysis_data['orderbook_data']['ask_price'][0] - analysis_data['orderbook_data']['bid_price'][0],
                 },
-                "moving_averages_analysis": analysis_data['ma_analysis'],
+                "moving_averages_analysis": analysis_data['ohlcv_data']['ma_analysis'],
                 "ohlcv": analysis_data['ohlcv_data']
             }
 

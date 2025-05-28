@@ -1,7 +1,7 @@
 import traceback
 import pandas as pd
 
-def perform_ma_analysis(self, df):
+def perform_ma_analysis(df):
     """종합적인 이동평균선 분석 수행"""
     try:
         print("3-3. 이동평균선 분석 중...")
@@ -29,13 +29,13 @@ def perform_ma_analysis(self, df):
             prev_ma5 = prev_ma20 = prev_ma60 = prev_ma120 = 0
 
         # 크로스 신호 분석
-        ma_cross_signals = self.analyze_ma_cross_signals(df)
+        ma_cross_signals = analyze_ma_cross_signals(df)
 
         # 정배열/역배열 분석
-        ma_alignment = self.analyze_ma_alignment(df)
+        ma_alignment = analyze_ma_alignment(df)
 
         # 지지/저항 분석
-        support_resistance = self.analyze_ma_support_resistance(df)
+        support_resistance = analyze_ma_support_resistance(df)
 
         # 이동평균선 분석 결과 구성
         ma_analysis = {
@@ -94,7 +94,7 @@ def perform_ma_analysis(self, df):
         return {}
 
 # 이동평균선 크로스 신호 분석
-def analyze_ma_cross_signals(self, df):
+def analyze_ma_cross_signals(df):
     """이동평균선 크로스 신호를 분석하여 골든크로스/데드크로스 감지"""
     try:
         ma_cross_signals = []
@@ -130,7 +130,7 @@ def analyze_ma_cross_signals(self, df):
         return []
 
 # 이동평균선 정배열/역배열 분석
-def analyze_ma_alignment(self, df):
+def analyze_ma_alignment(df):
     """이동평균선 정배열/역배열 상태 분석"""
     try:
         if len(df) == 0:
@@ -169,7 +169,7 @@ def analyze_ma_alignment(self, df):
         return {"status": "분석 오류", "strength": 0}
 
 # 이동평균선 지지/저항 분석
-def analyze_ma_support_resistance(self, df):
+def analyze_ma_support_resistance(df):
     """이동평균선의 지지/저항 역할 분석"""
     try:
         if len(df) == 0:
