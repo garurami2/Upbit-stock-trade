@@ -13,13 +13,15 @@ def get_youtube_analysis(channelsId):
         for video_id in channelsId:
             try:
                 transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
-                print(transcripts)
                 try:
                     transcript = transcripts.find_transcript(['ko'])
                 except NoTranscriptFound:
                     transcript = transcripts.find_generated_transcript(['ko'])  # ✅ fetch() 사용하여 JSON 직렬화 가능 객체 반환
-                data = transcript.fetch()
-                text = ' '.join(entry.text for entry in data)
+                txt_data = transcript.fetch()
+                if not txt_data:
+                    print(f"[SKIP] 자막 데이터가 비어 있음: {video_id}")
+                    continue
+                text = ' '.join(entry.text for entry in txt_data)
                 all_transcripts.append({
                     "video_id": video_id,
                     "content": text
