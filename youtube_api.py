@@ -1,7 +1,7 @@
 import json
 import traceback
 from openai import OpenAI
-from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 
 
 # 유튜브 영상 자막 분석
@@ -12,14 +12,23 @@ def get_youtube_analysis(channelsId):
         all_transcripts = []
         for video_id in channelsId:
             try:
-                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
-                text = ' '.join(entry['text'] for entry in transcript)
+                transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+                transcript = transcripts.find_transcript(['en']).fetch()  # ✅ fetch() 사용하여 JSON 직렬화 가능 객체 반환
+                text = ' '.join(entry.text for entry in transcript)
                 all_transcripts.append({
                     "video_id": video_id,
                     "content": text
                 })
+            except TranscriptsDisabled:
+                print(f"자막이 비활성화된 영상입니다: {video_id}")
+                traceback.print_exc()
+                continue
+            except NoTranscriptFound:
+                print(f"'{video_id}' 영상에 해당 언어 자막이 없습니다.")
+                traceback.print_exc()
+                continue
             except Exception as e:
-                print(f"Error getting transcript for video {video_id}: {e}")
+                print(f"예상치 못한 오류: {e}")
                 traceback.print_exc()
                 continue
 

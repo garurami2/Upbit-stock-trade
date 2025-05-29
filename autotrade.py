@@ -426,7 +426,7 @@ class CryptoDataCollector:
                         }"""
 
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-4o-2024-08-06",
                 messages=[
                     {
                         "role": "system",
@@ -438,20 +438,46 @@ class CryptoDataCollector:
                     }
                 ],
                 response_format={
-                    "type": "json_object"
-                },
-                temperature=0.7,
-                max_completion_tokens=1000
+                    "type": "json_schema",
+                    "json_schema":{
+                        "name": "trading_decision",
+                        "description": "Trading decision based on market analysis",
+                        "strict": True,
+                        "schema":{
+                            "type": "object",
+                            "properties": {
+                                "percentage": {
+                                    "type": "integer",
+                                    "description":"Percentage value for the trading decision (0-100)"
+                                },
+                                "decision": {
+                                    "type": "string",
+                                    "description": "Trading decision to make",
+                                    "enum": ['buy', 'sell', 'hold']
+                                },
+                                "confidence_score": {
+                                    "type": "integer",
+                                    "description": "Confidence level of the trading decision (0-100)"
+                                },
+                                "reason": {
+                                    "type": "string",
+                                    "description": "Detailed explanation for the decision"
+                                }
+                            },
+                            "required": ["percentage", "decision", "confidence_score", "reason"],
+                            "additionalProperties": False
+                        }
+                    }
+                }
             )
 
-            print(f"response : {response}")
-            # result = response.choices[0].message.content
 
+            # 응답 파싱
             result = json.loads(response.choices[0].message.content)
 
             print("=== AI 투자 판단 결과 ===")
             print(f"### AI Decision: {result['decision'].upper()} ###")
-            print(f"### Confidence: {result.get('confidence', 'N/A')}/10 ###")
+            print(f"### Confidence: {result.get('confidence_score', 'N/A')}/10 ###")
             print(f"### Reason: {result['reason']} ###")
             print(f"### Suggested Action: {result.get('suggested_action', 'N/A')} ###")
             print(f"### Risk Assessment: {result.get('risk_assessment', 'N/A')} ###")
@@ -466,46 +492,57 @@ class CryptoDataCollector:
 
 
     # 매매 실행
-    def execute_trade(self, decision, confidence_score, fear_greed_value):
+    def execute_trade(self, decision, percentage, confidence_score, fear_greed_value):
         print(f"fear_greed_value(공포탐욕지수): {fear_greed_value}")
         try:
+            # 기본 거래 비율은 AI가 제안한 percentage 사용
+            trade_ratio = percentage / 100.0
+            print(f"기본 거래 비율 : {trade_ratio}%")
+
             ####### 실제 거래 실행 #######
             if decision == 'buy':
                 # 공포탐욕지수에 따른 매매 비율 조정
-                # 극도의 공포 상태(0-25)에서는 더 과감한 매수
+                # 극도의 공포 상태(0-25)에서는 매수 비율 증가
                 if fear_greed_value <= 25:
-                    trade_ratio = 0.9995 # 최대 매수
+                    trade_ratio = min(trade_ratio * 1.2, 1.0)  # 최대 100% 까지 증가
+                # 극도의 탐욕 상태(75-100)에서는 매수 비율 감소
                 elif fear_greed_value <= 40:
-                    trade_ratio = 0.7 # 중간 매수
+                    trade_ratio = trade_ratio * 0.8 # 중간 매수
                 else:
-                    trade_ratio = 0.5 # 소액 매수
+                    trade_ratio = trade_ratio * 0.5 # 소액 매수
 
                 # 신뢰도 70 이상
                 if confidence_score >= 70:
                     krw = self.upbit.get_balance("KRW")
                     if krw > 5000:
-                        order_result = self.upbit.buy_market_order(self.ticker, krw * trade_ratio)
-                        print(f"### Buy Order Executed: {krw * trade_ratio:,.0f}원 ###")
-                        print("\n=== Buy Order Executed ===")
-                        print(f"Trade Ratio: {trade_ratio * 100}%")
-                        print(f"주문 결과: {json.dumps(order_result, indent=2)}")
+                        order_amount = krw * trade_ratio
+                        if order_amount >= 5000: # 주문 금액도 최소 거래 금액 체크
+                            order_result = self.upbit.buy_market_order(self.ticker, order_amount)
+                            print("\n=== Buy Order Executed ===")
+                            print(f"Trade Amount: {order_amount:,.0f} KRW ({trade_ratio * 100:.1f}%)")
+                            print(f"Original AI Suggestion: {percentage}%")
+                            print(f"Fear & Greed Index: {fear_greed_value}")
+                            print(f"주문 결과: {json.dumps(order_result, indent=2)}")
                     else:
                         print(f"### Buy Order Failed: Insufficient KRW (보유: {krw:,.0f}원, 필요: 5,000원 이상) ###")
 
-            elif decision == 'sell' and confidence_score > 70:
+            elif decision == 'sell':
 
-                # 극도의 탐욕 상태(75-100)에서는 더 과감한 매도
+                # 극도의 탐욕 상태(75-100)에서는 매도 비율 증가
                 if fear_greed_value >= 75:
-                    trade_ratio = 1.0 # 전량 매도
+                    trade_ratio = min(trade_ratio * 1.2, 1.0)  # 최대 100% 까지 증가
+                # 극도의 공포 상태(0-25)에서는 매도 비율 감소
                 elif fear_greed_value >= 60:
-                    trade_ratio = 0.7 # 일부 매도
+                    trade_ratio = trade_ratio * 0.8 # 중간 매수
                 else:
-                    trade_ratio = 0.5 # 소량 매도
+                    trade_ratio = trade_ratio * 0.5 # 소량 매도
 
                 # 신뢰도 70 이상
                 if confidence_score >= 70:
                     btc = self.upbit.get_balance(self.ticker)
                     current_price = pyupbit.get_current_price(self.ticker)
+
+                    print(f"have BTC : {btc:.8f} <-> KRW : {btc * current_price:,.0f}원")
 
                     # 매도 - 보유 BTC의 95%만 매도 (안전마진 확보)
                     # available_btc = current_status["my_btc"] * 0.95
@@ -513,14 +550,15 @@ class CryptoDataCollector:
 
                     if btc * current_price > 5000:
                         sell_amount = btc * trade_ratio
-                        print(f"### Sell Order Executed: {btc:.8f} BTC (약 {sell_amount:,.0f}원) ###")
-                        order_result = self.upbit.sell_market_order(self.ticker, sell_amount)
-                        print("\n=== Sell Order Executed ===")
-                        print(f"Trade Ratio: {trade_ratio * 100}%")
-                        print(f"주문 결과: {json.dumps(order_result, indent=2)}")
+                        if sell_amount >= 5000: # 주문 금액도 최소 거래 금액 체크
+                            order_result = self.upbit.sell_market_order(self.ticker, sell_amount)
+                            print("\n=== Sell Order Executed ===")
+                            print(f"Trade Amount: {sell_amount:.8f} BTC (약 {trade_ratio*100:.1f}%)")
+                            print(f"Original AI Suggestion: {percentage}%")
+                            print(f"Fear & Greed Index: {fear_greed_value}")
+                            print(f"주문 결과: {json.dumps(order_result, indent=2)}")
                     else:
-                        print(
-                            f"### Sell Order Failed: Insufficient BTC (보유: {btc:.8f} BTC, 가치: {btc * current_price:,.0f}원) ###")
+                        print(f"### Sell Order Failed: Insufficient BTC (보유: {btc:.8f} BTC, 가치: {btc * current_price:,.0f}원) ###")
 
         except Exception as e:
             print(f"Error in execute_trade: {e}")
@@ -538,22 +576,24 @@ def ai_trading():
         collector = CryptoDataCollector("KRW-BTC")
         ####### 차트 데이터뿐만 아니라 뉴스, 공포탐욕지수 등 다양한 데이터를 입력하는 구간 #######
         # 1. 현재 투자 상태 조회
+        print("\n=== Current Investment Status start ===")
         current_status = collector.get_current_status()
-        print("\n=== Current Investment Status ===")
-        print(json.dumps(current_status, indent=2))
+        print("\n=== Current Investment Status end ===")
 
         # 2. 호가 데이터 조회
+        print("\n=== Current Orderbook start ===")
         orderbook_data = collector.get_orderbook_data()
-        print("\n=== Current Orderbook ===")
-        print(json.dumps(orderbook_data, indent=2))
+        print("\n=== Current Orderbook end ===")
 
         # 3. 차트 데이터 수집
+        print("\n=== OHLCV Data start ===")
         ohlcv_data = collector.get_ohlcv_data()
-        print("\n=== OHLCV Data ===")
-        # print(json.dumps(ohlcv_data, indent=2))
+        print("\n=== OHLCV Data end ===")
 
         # 4. 공포탐욕지수 조회
+        print("\n=== fear_greed_data start ===")
         fear_greed_data = collector.get_fear_greed_index()
+        print("\n=== fear_greed_data end ===")
 
         # 5. 뉴스 데이터 조회
         news_data = collector.get_crypto_news()
@@ -577,7 +617,7 @@ def ai_trading():
                 print(json.dumps(ai_result, indent=2))
 
             # 8. 매매 실행
-            collector.execute_trade(ai_result['decision'], ai_result['confidence_score'], fear_greed_data['current']['value'])
+            collector.execute_trade(ai_result['decision'], ai_result['percentage'], ai_result['confidence_score'], fear_greed_data['current']['value'])
 
 
     except Exception as e:
@@ -595,7 +635,6 @@ if __name__ == "__main__":
     try:
         # 재귀적으로 계속 실행
         print("Starting Bitcoin Trading Bot...")
-        ai_trading()
         while True:
 
             ai_trading()
@@ -607,5 +646,6 @@ if __name__ == "__main__":
         print("\n프로그램이 사용자에 의해 종료되었습니다.")
     except Exception as e:
         print(f"예상치 못한 오류: {str(e)}")
+        traceback.print_exc()
         time.sleep(60)  # 에러 발생 시에도 1분 대기
 
