@@ -13,7 +13,7 @@ def get_youtube_analysis(channelsId):
         for video_id in channelsId:
             try:
                 transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
-                transcript = transcripts.find_transcript(['en']).fetch()  # ✅ fetch() 사용하여 JSON 직렬화 가능 객체 반환
+                transcript = transcripts.find_transcript(['ko']).fetch()  # ✅ fetch() 사용하여 JSON 직렬화 가능 객체 반환
                 text = ' '.join(entry.text for entry in transcript)
                 all_transcripts.append({
                     "video_id": video_id,
@@ -35,6 +35,38 @@ def get_youtube_analysis(channelsId):
         if not all_transcripts:
             return None
 
+        # 한국어 분석을 위한 시스템 메시지
+        system_message = """
+                            You are an expert cryptocurrency trading analyst. Analyze Korean YouTube content related to cryptocurrency
+                            trading and provide insights. Focus on analyzing these key aspets from the korean transcripts:
+                            1. Trading Strategy
+                            - Entry/exit points
+                            - Risk management methods
+                            - Trading patterns
+                            
+                            2. Market Analysis
+                            - Market sentiment
+                            - Important price levels
+                            - Potential scenarios
+                            
+                            3. Risk Factors
+                            - Market risks
+                            - Technical risks
+                            - External risks
+                            
+                            4. Technical Analytics
+                            - Technical indicators
+                            - Chart patterns
+                            - Key price levels
+                            
+                            5. Market Impact Factors
+                            - Econonmic factors
+                            - News and events
+                            - Market trends
+                            
+                            Provide analysis in JSON format with confidence scores.
+                         """
+
         # OpenAI API를 사용하여 자막 내용 분석
         analysis_prompt = """
                                 Analyze the cryptocurrency-related video transcripts and provide a JSON response with the following keys:
@@ -51,7 +83,7 @@ def get_youtube_analysis(channelsId):
             model="gpt-4o-mini",
             messages=[
                 {
-                    "role" : "system", "content":"You are a helpful assistant that responds in JSON format."
+                    "role" : "system", "content": system_message
                 },
                 {
                     "role" : "user", "content": f"{analysis_prompt}\n\n. Transcripts: {json.dumps(all_transcripts)}. Make sure to include json in your response."

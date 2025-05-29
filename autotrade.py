@@ -31,7 +31,8 @@ class CryptoDataCollector:
         self.client = OpenAI()
         self.fear_greed_api = "https://api.alternative.me/fng/"
         self.youtube_channels = [
-            "TWINrTppUl4" # 예시 비디오 ID
+            # "TWINrTppUl4" # 예시 비디오 ID
+            "3XbtEX3jUv4"
             # 여기에 추가 암호 화폐 관련 유튜브 채널 ID 추가
         ]
 
