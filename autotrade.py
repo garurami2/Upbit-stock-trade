@@ -4,17 +4,19 @@ import time
 import pyupbit
 import ta
 import json
-import moving_aver as ma
 import requests
+import base64
+# 별도로 뺀 분석
+import moving_aver as ma # 이동평균선
+import youtube_api # 유튜브 분석
+import charts # 지표 분석
+
 from openai import OpenAI
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+
+
+
 
 load_dotenv()
 
@@ -28,6 +30,10 @@ class CryptoDataCollector:
         self.upbit = pyupbit.Upbit(self.access, self.secret)
         self.client = OpenAI()
         self.fear_greed_api = "https://api.alternative.me/fng/"
+        self.youtube_channels = [
+            "TWINrTppUl4" # 예시 비디오 ID
+            # 여기에 추가 암호 화폐 관련 유튜브 채널 ID 추가
+        ]
 
     # 비트코인 관련 최신 뉴스 조회
     def get_crypto_news(self):
@@ -151,13 +157,13 @@ class CryptoDataCollector:
             print("3-1. 30일 일봉 데이터 수집 중...")
             df_daily = pyupbit.get_ohlcv("KRW-BTC", count=30, interval="day")
             df_daily = self.add_technical_indicators(df_daily)
-            print(f"30일 일봉 데이터 :: {df_daily}")
+            # print(f"30일 일봉 데이터 :: {df_daily}")
 
             # 3-2. 차트 데이터 가져오기 - 24시간 시간봉
             print("3-2. 24시간 시간봉 데이터 수집 중...")
             df_hourly = pyupbit.get_ohlcv("KRW-BTC", count=24, interval="minute60")
             df_hourly = self.add_technical_indicators(df_hourly)
-            print(f"24시간 시간봉 데이터 :: {df_hourly}")
+            # print(f"24시간 시간봉 데이터 :: {df_hourly}")
 
             # 3-3. 이동평균선 계산 (5일, 20일, 60일, 120일)
             ma_analysis = ma.perform_ma_analysis(df_daily)
@@ -275,8 +281,68 @@ class CryptoDataCollector:
                     'trend': trend,
                     'average': avg_value
                 }
+            return None
         except Exception as e:
             print(f"Error in get_fear_greed_index: {e}")
+            traceback.print_exc()
+            return None
+
+    def capture_and_analyze_chart(self):
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        screenshot_path = f"chart_{current_time}.png"
+
+        try:
+
+            url = f"https://upbit.com/full_chart?code=CRIX.UPBIT.{self.ticker}"
+            capture_success = charts.capture_full_page(url, screenshot_path)
+
+            if not capture_success:
+                return None
+
+            # 이미지를 base64로 인코딩
+            with open(screenshot_path, "rb") as image_file:
+                base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+
+            # OpenAI Vision API 호출
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": """
+                                            Analyze this cryptocurrency chart and provide insights about: 
+                                            1) Current trend
+                                            2) Key support/resistance levels 
+                                            3) Technical indicator signals
+                                            4) Notable patterns"
+                                        """
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=500
+            )
+
+            # 분석 결과 처리
+            analysis_result = response.choices[0].message.content
+
+            # 임시 파일 삭제
+            os.remove(screenshot_path)
+
+            return analysis_result
+        except Exception as e:
+            print(f"Error in capture_and_analyze_chart: {e}")
+            if os.path.exists(screenshot_path):
+                os.remove(screenshot_path)
             traceback.print_exc()
             return None
 
@@ -284,6 +350,12 @@ class CryptoDataCollector:
     def get_ai_analysis(self, analysis_data):
 
         try:
+
+            # 차트 이미지 분석 수행
+            chart_analysis = self.capture_and_analyze_chart()
+
+            # 유튜브 분석 수행
+            youtube_analysis = youtube_api.get_youtube_analysis(self.youtube_channels)
 
             # AI에게 제공할 데이터 구성
             ai_prompt_data = {
@@ -299,7 +371,9 @@ class CryptoDataCollector:
                 "moving_averages_analysis": analysis_data['ohlcv_data']['ma_analysis'],
                 "ohlcv": analysis_data['ohlcv_data'],
                 "fear_greed": analysis_data['fear_greed'],
-                "news": analysis_data['news']
+                "news": analysis_data['news'],
+                "chart_analysis": chart_analysis,
+                "youtube_analysis": youtube_analysis
             }
 
             # 어떤식으로 질문을 할지 설정
@@ -319,6 +393,8 @@ class CryptoDataCollector:
                         6. Technical indicators (price vs MA levels, support/resistance)
                         7. Risk management principles
                         8. Recent News Sentiment
+                        9. Visual Chart Analysis Results
+                        10. YouTube Content Analysis
                         
                         Please consider the following key points:
                         - Fear & Greed Index below 20 (Extreme Fear) may present buying
@@ -344,7 +420,9 @@ class CryptoDataCollector:
                           "rist_level": "low/medium/high",
                           "suggested_action": "specific action recommendation",
                           "risk_assessment": "risk level and management strategy",
-                          "technical_summary": "summary of key technical indicators and MA signals"
+                          "technical_summary": "summary of key technical indicators and MA signals",
+                          "news_impact": "analysis of news sentiment impact",
+                          "chart_analysis": "interpretation of visual patterns and signals"
                         }"""
 
             response = self.client.chat.completions.create(
@@ -448,6 +526,9 @@ class CryptoDataCollector:
             print(f"Error in execute_trade: {e}")
             traceback.print_exc()
 
+
+
+
 # 업비트 거래소의 API를 쉽게 사용할 수 있도록 도워주는 파이썬 라이브러리
 # 상세한 pypupbit 라이브러리 사용법 링크
 # github.com/sharebook-kr/pyupbit
@@ -469,7 +550,7 @@ def ai_trading():
         # 3. 차트 데이터 수집
         ohlcv_data = collector.get_ohlcv_data()
         print("\n=== OHLCV Data ===")
-        print(json.dumps(ohlcv_data, indent=2))
+        # print(json.dumps(ohlcv_data, indent=2))
 
         # 4. 공포탐욕지수 조회
         fear_greed_data = collector.get_fear_greed_index()
