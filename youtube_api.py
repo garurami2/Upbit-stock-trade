@@ -13,8 +13,13 @@ def get_youtube_analysis(channelsId):
         for video_id in channelsId:
             try:
                 transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
-                transcript = transcripts.find_transcript(['ko']).fetch()  # ✅ fetch() 사용하여 JSON 직렬화 가능 객체 반환
-                text = ' '.join(entry.text for entry in transcript)
+                print(transcripts)
+                try:
+                    transcript = transcripts.find_transcript(['ko'])
+                except NoTranscriptFound:
+                    transcript = transcripts.find_generated_transcript(['ko'])  # ✅ fetch() 사용하여 JSON 직렬화 가능 객체 반환
+                data = transcript.fetch()
+                text = ' '.join(entry.text for entry in data)
                 all_transcripts.append({
                     "video_id": video_id,
                     "content": text

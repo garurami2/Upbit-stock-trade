@@ -46,6 +46,75 @@ class CryptoDataCollector:
         self.ticker = ticker
         self.config = TradingConfig()
         self._init_apis()
+        self.dbmanager = dm.DatabaseManager()
+
+    # 과거 거래 분석 및 반성
+    def analyze_past_decisions(self):
+        try:
+            # 최근 거래 내역 조회
+            recent_trades = self.dbmanager.get_recent_trades(10)
+            recent_reflections = self.dbmanager.get_reflection_history(5)
+
+            # 현재 시장 상태 조회
+            current_market = {
+                "price": float(pyupbit.get_current_price(self.ticker)),
+                "status": self.get_current_status(),
+                "fear_greed": self.get_fear_greed_index(),
+                "technical": self.get_ohlcv_data()
+            }
+
+            # AI에 분석 요청
+            reflection_prompt = {
+                "recent_trades": recent_trades,
+                "recent_reflections": recent_reflections,
+                "current_market": current_market
+            }
+
+            response = self.client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """You are an AI trading advisor. Provide your analysis in JSON format with these exact fields:
+                        {
+                            "market_condition": "Current market state analysis",
+                            "decision_analysis": "Analysis of past trading decisions",
+                            "improvement_points": "Points to improve",
+                            "success_rate": numeric value between 0-100,
+                            "learning_points": "Key lessons learned"
+                        }"""
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Analyze these trading records and market conditions and provide response in JSON formant:\n{json.dumps(reflection_prompt, indent=2)}"
+                    }
+                ],
+                response_format={
+                    "type": "json_object"
+                }
+            )
+
+            reflection = json.loads(response.choices[0].message.content)
+
+            # 반성 일기 저장
+            reflection_data = {
+                'trading_id': recent_trades[0][0], # 최근 거래 ID
+                'reflection_date': datetime.now(),
+                'market_condition': reflection['market_condition'],
+                'decision_analysis': reflection['decision_analysis'],
+                'improvement_points': reflection['improvement_points'],
+                'success_rate': reflection['success_rate'],
+                'learning_points': reflection['learning_points']
+            }
+
+            self.dbmanager.add_reflection(reflection_data)
+
+            return reflection
+
+        except Exception as e:
+            print(f"Error in analyze_past_decisions: {e}")
+            traceback.print_exc()
+            return None
 
     def _init_apis(self):
         """API 초기화를 별도 메서드로 분리"""
@@ -364,8 +433,11 @@ class CryptoDataCollector:
             chart_analysis = self.capture_and_analyze_chart()
             youtube_analysis = youtube_api.get_youtube_analysis(self.youtube_channels)
 
+            # 과거 반성 일기 분석 추가
+            past_reflections = self.dbmanager.get_reflection_history(5)
+
             # AI 프롬프트 데이터 구성
-            ai_prompt_data = self._build_ai_prompt_data(analysis_data, chart_analysis, youtube_analysis)
+            ai_prompt_data = self._build_ai_prompt_data(analysis_data, chart_analysis, youtube_analysis, past_reflections)
 
             # AI 분석 실행
             response = self.client.chat.completions.create(
@@ -385,7 +457,7 @@ class CryptoDataCollector:
             self._handle_request_error("get_ai_analysis", e)
             return None
 
-    def _build_ai_prompt_data(self, analysis_data: Dict, chart_analysis: str, youtube_analysis: str) -> Dict:
+    def _build_ai_prompt_data(self, analysis_data: Dict, chart_analysis: str, youtube_analysis: str, past_reflections: str) -> Dict:
         """AI 프롬프트 데이터 구성"""
         orderbook = analysis_data['orderbook_data']
         return {
@@ -403,7 +475,8 @@ class CryptoDataCollector:
             "fear_greed": analysis_data['fear_greed'],
             "news": analysis_data['news'],
             "chart_analysis": chart_analysis,
-            "youtube_analysis": youtube_analysis
+            "youtube_analysis": youtube_analysis,
+            "past_reflections": past_reflections
         }
 
     def _get_ai_system_prompt(self) -> str:
@@ -468,9 +541,19 @@ class CryptoDataCollector:
                         "reason": {
                             "type": "string",
                             "description": "Detailed explanation for the decision"
+                        },
+                        "reflection_based_adjustments":{
+                            "type": "object",
+                            "properties": {
+                                "risk_adjustment": {"type": "string"},
+                                "strategy_improvement": {"type": "string"},
+                                "confidence_factors": {"type": "array", "items": {"type": "string"}}
+                            },
+                            "required": ["risk_adjustment", "strategy_improvement", "confidence_factors"],
+                            "additionalProperties": False
                         }
                     },
-                    "required": ["percentage", "decision", "confidence_score", "reason"],
+                    "required": ["percentage", "decision", "confidence_score", "reason", "reflection_based_adjustments"],
                     "additionalProperties": False
                 }
             }
@@ -578,8 +661,7 @@ class CryptoDataCollector:
             btc_avg_buy_price = float(self.upbit.get_avg_buy_price(self.ticker))
             btc_krw_price = float(pyupbit.get_current_price(self.ticker))
 
-            dbmanager = dm.DatabaseManager()
-            dbmanager.record_trade(decision, percentage, reason, btc_balance, krw_balance, btc_avg_buy_price,
+            self.dbmanager.record_trade(decision, percentage, reason, btc_balance, krw_balance, btc_avg_buy_price,
                                    btc_krw_price)
         except Exception as e:
             self._handle_request_error("_record_trade_result", e)
@@ -589,6 +671,12 @@ def ai_trading():
     """AI 거래 메인 함수"""
     try:
         collector = CryptoDataCollector("KRW-BTC")
+
+        # 과거 거래 분석 및 반성 수행
+        reflection = collector.analyze_past_decisions()
+        if reflection:
+            print("\n=== Trading Reflection ===")
+            print(json.dumps(reflection, indent=2))
 
         # 데이터 수집
         print("\n=== 데이터 수집 시작 ===")
@@ -623,6 +711,10 @@ def ai_trading():
         if ai_result:
             print("\n=== AI Analysis Results ===")
             print(json.dumps(ai_result, indent=2))
+
+            # 반성 기반 조정 사항 출력
+            print("\n=== Reflection-based Adjustments ===")
+            print(json.dumps(ai_result["reflection_based_adjustments"], indent=2))
 
             collector.execute_trade(
                 ai_result['decision'],
